@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dokumentasi Integration Gateway Service</title>
+    <style>
+        @media print {
+            body {
+                font-size: 10pt;
+                padding: 0;
+            }
+
+            .page-break {
+                page-break-before: always;
+            }
+
+            pre {
+                white-space: pre-wrap;
+                word-break: break-all;
+            }
+
+            .no-print {
+                display: none;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #24292e;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 25px;
+        }
+
+        h1 {
+            color: #0366d6;
+            border-bottom: 2px solid #eaecef;
+            padding-bottom: 10px;
+            font-size: 24pt;
+            margin-top: 0;
+        }
+
+        h2 {
+            color: #1b1f23;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 6px;
+            margin-top: 36px;
+            font-size: 16pt;
+        }
+
+        h3 {
+            color: #24292e;
+            margin-top: 24px;
+            font-size: 13pt;
+        }
+
+        h4 {
+            color: #444d56;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 11pt;
+        }
+
+        p,
+        li {
+            font-size: 10.5pt;
+        }
+
+        code {
+            background-color: #f6f8fa;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 9.5pt;
+        }
+
+        pre {
+            background-color: #f6f8fa;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 12px 16px;
+            overflow-x: auto;
+            font-size: 9pt;
+            line-height: 1.45;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px 0;
+            font-size: 9.5pt;
+        }
+
+        th,
+        td {
+            border: 1px solid #dfe2e5;
+            padding: 9px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background-color: #f6f8fa;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fafbfc;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 8pt;
+            font-weight: 700;
+            border-radius: 12px;
+            color: white;
+        }
+
+        .badge-post {
+            background-color: #28a745;
+        }
+
+        .badge-get {
+            background-color: #0366d6;
+        }
+
+        .badge-patch {
+            background-color: #f6a000;
+        }
+
+        .badge-req {
+            color: #d73a49;
+            font-weight: bold;
+        }
+
+        .badge-opt {
+            color: #6a737d;
+            font-style: italic;
+        }
+
+        .callout {
+            border-left: 4px solid #0366d6;
+            background-color: #f1f8ff;
+            padding: 12px 16px;
+            margin: 18px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Integration Gateway Service</h1>
+    <p><strong>Spesifikasi Teknis & Dokumentasi API</strong> &nbsp;|&nbsp; Versi 1.0.0 &nbsp;|&nbsp; Stack: Node.js,
+        Fastify, MySQL, BullMQ, Redis</p>
+
+    <div class="callout">
+        <strong>Tujuan Service:</strong> Memisahkan logika integrasi pihak ketiga dari aplikasi utama (Main App),
+        mencatat seluruh log transaksi secara terpusat, menyediakan mekanisme isolasi kegagalan (Circuit Breaker), serta
+        mengamankan kredensial pihak ketiga dengan enkripsi AES-256-GCM.
+    </div>
+
+    <h2>1. Arsitektur & Pola Komunikasi</h2>
+    <pre>
+┌──────────────┐     HTTP (x-api-key)     ┌────────────────────────┐      HTTPS / REST      ┌─────────────────┐
+│              │ ───────────────────────► │  Integration Gateway   │ ─────────────────────► │  Third-Party /  │
+│   Main App   │                          │                        │                        │  External API   │
+│              │ ◄─────────────────────── │  - Enkripsi Kredensial │ ◄───────────────────── │  (e.g. Partner) │
+└──────────────┘         JSON Response    │  - Circuit Breaker     │      HTTP Response     └─────────────────┘
+                                          │  - Queue Background    │
+                                          └───────────┬────────────┘
+                                                      │
+                                           ┌──────────┴──────────┐
+                                           │                     │
+                                           ▼                     ▼
+                                    ┌──────────────┐      ┌──────────────┐
+                                    │ MySQL (Logs) │      │ Redis (Queue)│
+                                    └──────────────┘      └──────────────┘
+  </pre>
+
+    <h3>Keuntungan Arsitektur:</h3>
+    <ul>
+        <li><strong>Main App Tetap Ringan:</strong> Service utama tidak membengkak karena library/aturan spesifik vendor
+            luar.</li>
+        <li><strong>Zero Re-deploy:</strong> Jika vendor ganti base URL atau rotate token, cukup update di database
+            Gateway. Main App tidak perlu di-restart atau di-build ulang.</li>
+        <li><strong>Audit Log & Penanganan Komplain:</strong> Bukti request mentah dan balasan dari vendor tersimpan
+            rapi untuk investigasi insiden.</li>
+        <li><strong>Isolasi Downtime (Circuit Breaker):</strong> Jika vendor mati total, Gateway memutus loop tunggu
+            sehingga Main App tidak kehabisan connection pool.</li>
+    </ul>
+
+    <h2>2. Standar Autentikasi Internal</h2>
+    <p>Semua endpoint (kecuali <code>/health</code>) mewajibkan header API Key internal:</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%">Header Name</th>
+                <th style="width: 25%">Contoh Nilai</th>
+                <th style="width: 50%">Deskripsi</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>x-api-key</code></td>
+                <td><code>secretku4t</code></td>
+                <td>Divalidasi dengan environment variable <code>API_KEYS</code> di file <code>.env</code> Gateway.</td>
+            </tr>
+            <tr>
+                <td><code>Content-Type</code></td>
+                <td><code>application/json</code></td>
+                <td>Format baku pengiriman body request.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <h2>3. Spesifikasi Lengkap API & Kamus Data</h2>
+
+    <!-- ENDPOINT 1 -->
+    <h3>A. Registrasi Integrasi Baru (<span class="badge badge-post">POST</span> <code>/integrations</code>)</h3>
+    <p>Mendaftarkan konfigurasi endpoint pihak ketiga ke katalog Gateway.</p>
+
+    <h4>1. Root Level Request Body</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 18%">Key</th>
+                <th style="width: 13%">Tipe Data</th>
+                <th style="width: 12%">Status</th>
+                <th style="width: 25%">Pilihan / Contoh</th>
+                <th style="width: 32%">Fungsi & Penjelasan</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>code</code></td>
+                <td>String</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>"wilayah-id-provinces"</code></td>
+                <td>Identifier unik (slug: huruf kecil, angka, strip). Dipakai saat pemanggilan execute.</td>
+            </tr>
+            <tr>
+                <td><code>name</code></td>
+                <td>String</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>"Wilayah ID - Provinsi"</code></td>
+                <td>Nama deskriptif untuk kemudahan membaca di log dan dashboard monitoring.</td>
+            </tr>
+            <tr>
+                <td><code>direction</code></td>
+                <td>Enum (String)</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td>
+                    <code>OUTBOUND</code> (Hit vendor)<br>
+                    <code>INBOUND</code> (Webhook terima)<br>
+                    <code>PASSIVE</code> (Webview / URL)<br>
+                    <code>BILATERAL</code> (Dua arah / WS)
+                </td>
+                <td>Arah aliran data. Gunakan <code>OUTBOUND</code> untuk panggil API luar, <code>PASSIVE</code> untuk
+                    webview.</td>
+            </tr>
+            <tr>
+                <td><code>transport</code></td>
+                <td>Enum (String)</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td>
+                    <code>REST</code> | <code>WEBVIEW</code> | <code>WEBHOOK</code> | <code>SOAP</code> |
+                    <code>GRAPHQL</code>
+                </td>
+                <td>Menentukan adapter internal yang akan mengeksekusi integrasi ini.</td>
+            </tr>
+            <tr>
+                <td><code>execution_mode</code></td>
+                <td>Enum (String)</td>
+                <td><span class="badge-opt">OPTIONAL</span><br>Default: <code>SYNC</code></td>
+                <td><code>SYNC</code> atau <code>ASYNC</code></td>
+                <td><code>SYNC</code> untuk request instan (tunggu response). <code>ASYNC</code> untuk antrian BullMQ di
+                    background.</td>
+            </tr>
+            <tr>
+                <td><code>config</code></td>
+                <td>Object</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><em>(Lihat tabel Config)</em></td>
+                <td>Objek detail teknis endpoint pihak ketiga (URL, path, timeout, circuit breaker).</td>
+            </tr>
+            <tr>
+                <td><code>credentials</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><em>(Lihat tabel Credentials)</em></td>
+                <td>Informasi rahasia autentikasi vendor (otomatis dienkripsi AES-256-GCM ke MySQL).</td>
+            </tr>
+            <tr>
+                <td><code>metadata</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "mask_fields": ["rek"] }</code></td>
+                <td>Pengaturan tambahan, seperti daftar field yang wajib disamarkan di tabel audit log.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>2. Isi Objek <code>config</code> (Khusus Transport: <code>REST</code>)</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 20%">Key</th>
+                <th style="width: 14%">Tipe Data</th>
+                <th style="width: 12%">Status</th>
+                <th style="width: 24%">Contoh Nilai</th>
+                <th style="width: 30%">Penjelasan</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>base_url</code></td>
+                <td>String (URL)</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>"https://wilayah.id"</code></td>
+                <td>Host utama API vendor eksternal.</td>
+            </tr>
+            <tr>
+                <td><code>method</code></td>
+                <td>String</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>PATCH</code>, <code>DELETE</code></td>
+                <td>Metode HTTP yang diminta oleh vendor eksternal.</td>
+            </tr>
+            <tr>
+                <td><code>path</code></td>
+                <td>String</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>"/api/provinces.json"</code><br><code>"/api/regencies/{{prov_id}}.json"</code></td>
+                <td>Path endpoint. Mendukung placeholder <code>{{variabel}}</code> yang akan diisi otomatis dari
+                    payload.</td>
+            </tr>
+            <tr>
+                <td><code>headers</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "Content-Type": "application/json" }</code></td>
+                <td>Header statis atau dinamis yang wajib dikirim ke pihak ketiga.</td>
+            </tr>
+            <tr>
+                <td><code>body_template</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "account": "{{rekening}}" }</code></td>
+                <td>Template JSON body jika method <code>POST/PUT</code>. Placeholder akan diisi dari payload.</td>
+            </tr>
+            <tr>
+                <td><code>query_template</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "page": "{{page_num}}" }</code></td>
+                <td>Template query parameter URL (<code>?page=1</code>).</td>
+            </tr>
+            <tr>
+                <td><code>timeout_ms</code></td>
+                <td>Integer</td>
+                <td><span class="badge-opt">OPTIONAL</span><br>Default: 30000</td>
+                <td><code>10000</code></td>
+                <td>Batas waktu tunggu koneksi dalam milidetik sebelum dianggap TIMEOUT.</td>
+            </tr>
+            <tr>
+                <td><code>circuit_breaker</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "enabled": true, "failureThreshold": 5, "resetTimeoutMs": 30000 }</code></td>
+                <td>Jika vendor gagal berturut-turut sebanyak <code>failureThreshold</code>, Gateway memutus request
+                    selama <code>resetTimeoutMs</code> ms.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>3. Isi Objek <code>config</code> (Khusus Transport: <code>WEBVIEW</code>)</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 20%">Key</th>
+                <th style="width: 14%">Tipe Data</th>
+                <th style="width: 12%">Status</th>
+                <th style="width: 24%">Contoh Nilai</th>
+                <th style="width: 30%">Penjelasan</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>base_url</code></td>
+                <td>String (URL)</td>
+                <td><span class="badge-req">REQUIRED</span></td>
+                <td><code>"https://partner.com/embed"</code></td>
+                <td>URL dasar halaman webview yang akan ditampilkan ke pengguna.</td>
+            </tr>
+            <tr>
+                <td><code>url_template</code></td>
+                <td>String</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>"{{base_url}}?user={{user_id}}&token={{generated_token}}"</code></td>
+                <td>Template pembentukan URL akhir beserta query parameter dinamis.</td>
+            </tr>
+            <tr>
+                <td><code>token_generation</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "type": "SIMPLE", "secret_field": "secret" }</code></td>
+                <td>Aturan pembuatan token otomatis (tipe <code>SIMPLE</code> hash atau <code>HMAC</code>) jika vendor
+                    butuh signed URL.</td>
+            </tr>
+            <tr>
+                <td><code>iframe_options</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>{ "width": "100%", "height": "600px" }</code></td>
+                <td>Atribut bantuan untuk tim frontend saat me-render iframe/webview di aplikasi.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>4. Objek <code>credentials</code></h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 20%">Key</th>
+                <th style="width: 14%">Tipe Data</th>
+                <th style="width: 12%">Status</th>
+                <th style="width: 24%">Pilihan Nilai</th>
+                <th style="width: 30%">Penjelasan</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>auth_type</code></td>
+                <td>Enum (String)</td>
+                <td><span class="badge-req">REQUIRED</span>*</td>
+                <td>
+                    <code>NONE</code> (Tanpa auth)<br>
+                    <code>BEARER</code> (Bearer Token)<br>
+                    <code>API_KEY</code> (Custom Header)<br>
+                    <code>BASIC</code> (Basic Auth)<br>
+                    <code>CUSTOM</code> (Header bebas)
+                </td>
+                <td>Tipe autentikasi yang diminta pihak ketiga. <em>*Wajib jika credentials disertakan.</em></td>
+            </tr>
+            <tr>
+                <td><code>data</code></td>
+                <td>Object</td>
+                <td><span class="badge-req">REQUIRED</span>*</td>
+                <td>
+                    Bearer: <code>{ "token": "xyz" }</code><br>
+                    API Key: <code>{ "api_key": "123", "header_name": "X-API-Key" }</code><br>
+                    Basic: <code>{ "username": "admin", "password": "pass" }</code>
+                </td>
+                <td>Data rahasia autentikasi. Disimpan dalam bentuk terenkripsi AES-256-GCM.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <!-- ENDPOINT 2 -->
+    <h3>B. Eksekusi Integrasi (<span class="badge badge-post">POST</span> <code>/execute/:code</code>)</h3>
+    <p>Endpoint yang dipanggil oleh <strong>Main App</strong> setiap kali ingin menjalankan integrasi pihak ketiga.</p>
+
+    <h4>Request Body</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 20%">Key</th>
+                <th style="width: 14%">Tipe Data</th>
+                <th style="width: 12%">Status</th>
+                <th style="width: 24%">Contoh Nilai</th>
+                <th style="width: 30%">Penjelasan Fungsi</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>payload</code></td>
+                <td>Object</td>
+                <td><span class="badge-opt">OPTIONAL</span><br>Default: <code>{}</code></td>
+                <td><code>{ "province_code": "11", "user_id": "USR-1" }</code></td>
+                <td>Data dinamis yang akan disuntikkan ke template <code>path</code>, <code>headers</code>, atau
+                    <code>body_template</code> yang sudah didaftarkan.</td>
+            </tr>
+            <tr>
+                <td><code>correlationId</code></td>
+                <td>String</td>
+                <td><span class="badge-opt">OPTIONAL</span></td>
+                <td><code>"TRX-20261030-88899"</code></td>
+                <td>Nomor referensi / Trace ID dari Main App untuk pelacakan silang di log audit. Jika dikosongkan,
+                    Gateway akan membuat UUID otomatis.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Struktur Response dari Gateway:</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%">Key Response</th>
+                <th style="width: 15%">Tipe Data</th>
+                <th style="width: 60%">Penjelasan Nilai</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>success</code></td>
+                <td>Boolean</td>
+                <td><code>true</code> jika pihak ketiga membalas HTTP 2xx. <code>false</code> jika timeout, circuit
+                    breaker open, atau HTTP 4xx/5xx.</td>
+            </tr>
+            <tr>
+                <td><code>data</code></td>
+                <td>Any (Object/Array)</td>
+                <td>Data asli hasil respons dari pihak ketiga dalam format JSON (atau objek URL jika tipe Webview).</td>
+            </tr>
+            <tr>
+                <td><code>metadata.duration_ms</code></td>
+                <td>Integer</td>
+                <td>Durasi waktu respons jaringan vendor pihak ketiga dalam milidetik (latency).</td>
+            </tr>
+            <tr>
+                <td><code>metadata.statusCode</code></td>
+                <td>Integer</td>
+                <td>Status HTTP asli yang dikembalikan oleh server vendor (misal: <code>200</code>, <code>400</code>,
+                    <code>502</code>).</td>
+            </tr>
+            <tr>
+                <td><code>metadata.correlationId</code></td>
+                <td>String</td>
+                <td>Trace ID yang sama dari Main App untuk kebutuhan audit.</td>
+            </tr>
+            <tr>
+                <td><code>error</code></td>
+                <td>Object / Null</td>
+                <td>Berisi detail error jika pemanggilan gagal.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <!-- CONTOH KASUS LENGKAP -->
+    <h2>4. Contoh Nyata Eksekusi</h2>
+
+    <h3>Contoh 1: REST API (Wilayah ID - Daftar Provinsi)</h3>
+    <p><strong>Registrasi:</strong></p>
+    <pre><code>POST /integrations
+Headers:
+  x-api-key: secretku4t
+  Content-Type: application/json
+
+Body:
+{
+  "code": "wilayah-id-provinces",
+  "name": "Wilayah ID - Daftar Provinsi",
+  "direction": "OUTBOUND",
+  "transport": "REST",
+  "execution_mode": "SYNC",
+  "config": {
+    "base_url": "https://wilayah.id",
+    "method": "GET",
+    "path": "/api/provinces.json",
+    "timeout_ms": 10000,
+    "circuit_breaker": { "enabled": true, "failureThreshold": 5, "resetTimeoutMs": 30000 }
+  },
+  "credentials": { "auth_type": "NONE" }
+}</code></pre>
+
+    <p><strong>Pemanggilan oleh Main App:</strong></p>
+    <pre><code>POST /execute/wilayah-id-provinces
+Headers:
+  x-api-key: secretku4t
+  Content-Type: application/json
+
+Body:
+{
+  "payload": {},
+  "correlationId": "ORDER-991202"
+}
+
+// RESPONSE (200 OK)
+{
+  "success": true,
+  "data": {
+    "data": [
+      { "code": "11", "nama": "Aceh" },
+      { "code": "12", "nama": "Sumatera Utara" },
+      { "code": "31", "nama": "DKI Jakarta" }
+    ]
+  },
+  "metadata": {
+    "correlationId": "ORDER-991202",
+    "integration": { "code": "wilayah-id-provinces", "name": "Wilayah ID - Daftar Provinsi", "transport": "REST" },
+    "duration_ms": 215,
+    "statusCode": 200
+  },
+  "error": null
+}</code></pre>
+
+    <h3>Contoh 2: Webview URL Partner</h3>
+    <pre><code>POST /execute/partner-webview
+Body:
+{
+  "payload": {
+    "user_id": "USR-9988",
+    "session_token": "TOKEN-ABC-123"
+  }
+}
+
+// RESPONSE (200 OK)
+{
+  "success": true,
+  "data": {
+    "url": "https://partner.example.com/embed?user_id=USR-9988&session=TOKEN-ABC-123",
+    "iframe_options": { "width": "100%", "height": "600px" }
+  }
+}</code></pre>
+
+    <div class="page-break"></div>
+
+    <h2>5. Audit Logs & Monitoring</h2>
+
+    <h3>A. Query Riwayat Log (<span class="badge badge-get">GET</span> <code>/logs</code>)</h3>
+    <p>Filter query parameter yang tersedia: <code>integration_code</code>, <code>status</code>
+        (SUCCESS/FAILED/TIMEOUT), <code>correlation_id</code>, <code>limit</code>, <code>page</code>.</p>
+    <pre><code>GET /logs?integration_code=wilayah-id-provinces&limit=10
+Headers:
+  x-api-key: secretku4t
+
+// RESPONSE (200 OK)
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "integration_code": "wilayah-id-provinces",
+      "correlation_id": "ORDER-991202",
+      "direction": "OUTBOUND",
+      "request_method": "GET",
+      "request_url": "https://wilayah.id/api/provinces.json",
+      "response_status": 200,
+      "status": "SUCCESS",
+      "duration_ms": 215,
+      "created_at": "2026-10-30T07:45:12.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
+}</code></pre>
+
+    <h3>B. Ringkasan Statistik Performa (<span class="badge badge-get">GET</span> <code>/logs/stats</code>)</h3>
+    <p>Melihat performa, success rate, dan rata-rata latensi dalam rentang waktu tertentu.</p>
+    <pre><code>GET /logs/stats
+Headers:
+  x-api-key: secretku4t
+
+// RESPONSE (200 OK)
+{
+  "success": true,
+  "data": {
+    "summary": {
+      "total": 150,
+      "success_count": 147,
+      "failed_count": 3,
+      "timeout_count": 0,
+      "avg_duration_ms": 182.4,
+      "success_rate": "98.00%"
+    }
+  }
+}</code></pre>
+
+    <h2>6. Fitur Keandalan (Reliability Features)</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%">Fitur</th>
+                <th style="width: 35%">Mekanisme Teknis</th>
+                <th style="width: 40%">Manfaat untuk Sistem</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Circuit Breaker</strong></td>
+                <td>State <code>CLOSED</code> &rarr; <code>OPEN</code> otomatis jika 5 kali gagal berturut-turut.</td>
+                <td>Mencegah Main App hang menunggu vendor yang sedang down total.</td>
+            </tr>
+            <tr>
+                <td><strong>Asynchronous Queue</strong></td>
+                <td>BullMQ + Redis worker terpisah (<code>worker-runner.js</code>).</td>
+                <td>Menangani integrasi dengan pemrosesan berat / batch tanpa memblokir koneksi HTTP Main App.</td>
+            </tr>
+            <tr>
+                <td><strong>AES-256-GCM Encryption</strong></td>
+                <td>Enkripsi simetris dengan Auth Tag & random IV untuk setiap kredensial di database.</td>
+                <td>Jika database bocor, kredensial dan token rahasia pihak ketiga tetap aman dan tidak bisa dibaca.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Sensitive Data Masking</strong></td>
+                <td>Penyaringan otomatis field sensitif (password, token, rekening) sebelum ditulis ke log.</td>
+                <td>Kepatuhan privasi data dan perlindungan informasi sensitif pada log sistem.</td>
+            </tr>
+        </tbody>
+    </table>
+
+</body>
+
+</html>

@@ -1,0 +1,284 @@
+{
+    "info": {
+        "name": "Integration Gateway API",
+        "description": "Koleksi API lengkap untuk Integration Gateway Service",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000"
+        },
+        {
+            "key": "apiKey",
+            "value": "secretku4t"
+        }
+    ],
+    "auth": {
+        "type": "apikey",
+        "apikey": [
+            {
+                "key": "key",
+                "value": "x-api-key",
+                "type": "string"
+            },
+            {
+                "key": "value",
+                "value": "{{apiKey}}",
+                "type": "string"
+            },
+            {
+                "key": "in",
+                "value": "header",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "1. Health Check",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{baseUrl}}/health",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "health"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "2. Integrations Registry",
+            "item": [
+                {
+                    "name": "List All Integrations",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/integrations",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "integrations"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Register: REST Outbound (Wilayah ID)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"code\": \"wilayah-id-provinces\",\n  \"name\": \"Wilayah ID - Daftar Provinsi\",\n  \"direction\": \"OUTBOUND\",\n  \"transport\": \"REST\",\n  \"execution_mode\": \"SYNC\",\n  \"config\": {\n    \"base_url\": \"https://wilayah.id\",\n    \"method\": \"GET\",\n    \"path\": \"/api/provinces.json\",\n    \"timeout_ms\": 10000,\n    \"circuit_breaker\": {\n      \"enabled\": true,\n      \"failureThreshold\": 5,\n      \"resetTimeoutMs\": 30000\n    }\n  },\n  \"credentials\": {\n    \"auth_type\": \"NONE\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/integrations",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "integrations"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Register: Webview Partner",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"code\": \"test-webview-partner\",\n  \"name\": \"Partner Dashboard Webview\",\n  \"direction\": \"PASSIVE\",\n  \"transport\": \"WEBVIEW\",\n  \"execution_mode\": \"SYNC\",\n  \"config\": {\n    \"base_url\": \"https://partner.example.com/embed\",\n    \"url_template\": \"{{base_url}}?user_id={{user_id}}&session={{session_token}}\",\n    \"iframe_options\": {\n      \"width\": \"100%\",\n      \"height\": \"600px\"\n    }\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/integrations",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "integrations"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Integration Detail",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/integrations/wilayah-id-provinces",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "integrations",
+                                "wilayah-id-provinces"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle Active/Inactive",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/integrations/wilayah-id-provinces/toggle",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "integrations",
+                                "wilayah-id-provinces",
+                                "toggle"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3. Execute Integrations",
+            "item": [
+                {
+                    "name": "Execute: REST Wilayah ID",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"payload\": {},\n  \"correlationId\": \"TEST-REQ-001\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/execute/wilayah-id-provinces",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "execute",
+                                "wilayah-id-provinces"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Execute: Webview Partner URL",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"payload\": {\n    \"user_id\": \"USR-9988\",\n    \"session_token\": \"TOKEN-ABC-123\"\n  },\n  \"correlationId\": \"WV-REQ-002\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/execute/test-webview-partner",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "execute",
+                                "test-webview-partner"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "4. Logs & Monitoring",
+            "item": [
+                {
+                    "name": "Get Recent Logs",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/logs?limit=20",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Logs by Integration Code",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/logs?integration_code=wilayah-id-provinces",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "integration_code",
+                                    "value": "wilayah-id-provinces"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Logs Stats Summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/logs/stats",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "logs",
+                                "stats"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
