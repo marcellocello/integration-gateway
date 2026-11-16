@@ -13,31 +13,41 @@ class BaseAdapter {
         throw new Error('validateConfig() must be implemented by subclass');
     }
 
-    buildAuthHeaders(headers = {}) {
+    buildAuthHeaders(headers = {}, payload = {}) {
         if (!this.credentials) return headers;
 
         const cred = this.credentials;
         const merged = { ...headers };
 
         switch (cred.auth_type) {
-            case 'BEARER': merged['Authorization'] = `Bearer ${cred.data.token}`;
+            case 'BEARER': {
+                const token = this.resolveTemplate(cred.data.token, payload);
+                merged['Authorization'] = `Bearer ${token}`;
                 break;
-            case 'API_KEY':
+            }
+            case 'API_KEY': {
+                const apiKey = this.resolveTemplate(cred.data.api_key, payload);
                 if (cred.data.header_name) {
-                    merged[cred.data.header_name] = cred.data.api_key;
+                    merged[cred.data.header_name] = apiKey;
                 } else {
-                    merged['X-API-Key'] = cred.data.api_key;
+                    merged['X-API-Key'] = apiKey;
                 }
                 break;
-            case 'BASIC':
-                const basic = Buffer.from(`${cred.data.username}:${cred.data.password}`).toString('base64');
+            }
+            case 'BASIC': {
+                const username = this.resolveTemplate(cred.data.username, payload);
+                const password = this.resolveTemplate(cred.data.password, payload);
+                const basic = Buffer.from(`${username}:${password}`).toString('base64');
                 merged['Authorization'] = `Basic ${basic}`;
                 break;
-            case 'CUSTOM':
+            }
+            case 'CUSTOM': {
                 if (cred.data.headers) {
-                    Object.assign(merged, cred.data.headers);
+                    const resolvedCustomHeaders = this.resolveTemplate(cred.data.headers, payload);
+                    Object.assign(merged, resolvedCustomHeaders);
                 }
                 break;
+            }
             case 'NONE':
             default:
                 break;

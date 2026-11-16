@@ -24,7 +24,7 @@ class RestApiAdapter extends BaseAdapter {
             if (qs) url += `?${qs}`;
         }
 
-        const finalHeaders = this.buildAuthHeaders(resolvedHeaders);
+        const finalHeaders = this.buildAuthHeaders(resolvedHeaders, payload);
 
         const result = await httpRequest({
             url,
