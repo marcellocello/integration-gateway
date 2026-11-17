@@ -1,4 +1,4 @@
-const { request } = require('undici');
+const { request, FormData } = require('undici');
 
 async function httpRequest(options) {
     const {
@@ -7,6 +7,9 @@ async function httpRequest(options) {
         headers = {},
         body = null,
         timeout = 30000,
+        forceBody = false,
+        files = [],
+        formFields = {},
     } = options;
 
     const startTime = Date.now();
@@ -14,23 +17,40 @@ async function httpRequest(options) {
     try {
         const requestOptions = {
             method,
-            headers: {
-                'Content-Type': 'application/json',
-                ...headers,
-            },
             headersTimeout: timeout,
             bodyTimeout: timeout,
         };
 
-        if (body && ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
-            requestOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+        if (files && files.length > 0) {
+            const form = new FormData();
+            for (const f of files) {
+                const blob = new Blob([f.buffer], { type: f.mimetype || 'application/octet-stream' });
+                form.append(f.fieldname, blob, f.filename);
+            }
+
+            for (const [key, value] of Object.entries(formFields)) {
+                form.append(key, String(value));
+            }
+
+            const { 'Content-Type': _, ...headersWithoutCT } = headers;
+            requestOptions.headers = headersWithoutCT;
+            requestOptions.body = form;
+        } else {
+            requestOptions.headers = {
+                'Content-Type': 'application/json',
+                ...headers,
+            };
+            const methodAllowsBody = ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase());
+            if (body && (methodAllowsBody || forceBody)) {
+                requestOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+            }
         }
 
         const response = await request(url, requestOptions);
         const responseBody = await response.body.text();
         const duration = Date.now() - startTime;
-
         let parsedBody;
+
         try {
             parsedBody = JSON.parse(responseBody);
         } catch {
@@ -49,7 +69,8 @@ async function httpRequest(options) {
         };
     } catch (err) {
         const duration = Date.now() - startTime;
-        const isTimeout = err.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+        const isTimeout =
+            err.code === 'UND_ERR_HEADERS_TIMEOUT' ||
             err.code === 'UND_ERR_BODY_TIMEOUT' ||
             err.code === 'UND_ERR_CONNECT_TIMEOUT';
 
@@ -60,11 +81,7 @@ async function httpRequest(options) {
             body: null,
             rawBody: null,
             duration,
-            error: {
-                message: err.message,
-                code: err.code,
-                isTimeout,
-            },
+            error: { message: err.message, code: err.code, isTimeout },
         };
     }
 }

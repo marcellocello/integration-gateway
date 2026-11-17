@@ -2,29 +2,45 @@ const { v4: uuidv4 } = require('uuid');
 const { execute } = require('../services/executor');
 
 async function executeRoutes(fastify) {
-    fastify.post('/execute/:code', {
-        schema: {
-            params: {
-                type: 'object',
-                properties: { code: { type: 'string' } },
-            },
-            body: {
-                type: 'object',
-                properties: {
-                    payload: { type: 'object', default: {} },
-                    correlationId: { type: 'string' },
-                },
-            },
-        },
-    }, async (request, reply) => {
+    fastify.post('/execute/:code', async (request, reply) => {
         const { code } = request.params;
-        const { payload, correlationId } = request.body;
-        const corrId = correlationId || uuidv4();
+        let corrId = uuidv4();
+        let payload = {};
+        let files = [];
 
         try {
-            const result = await execute(code, payload || {}, corrId);
+            const contentType = request.headers['content-type'] || '';
+            if (contentType.includes('multipart/form-data')) {
+                const parts = request.parts();
 
+                for await (const part of parts) {
+                    if (part.type === 'file') {
+                        const buffer = await part.toBuffer();
+                        files.push({
+                            fieldname: part.fieldname,
+                            filename: part.filename,
+                            mimetype: part.mimetype,
+                            buffer,
+                        });
+                    } else {
+                        if (part.fieldname === 'correlationId') {
+                            corrId = part.value;
+                        } else {
+                            try { payload[part.fieldname] = JSON.parse(part.value); }
+                            catch { payload[part.fieldname] = part.value; }
+                        }
+                    }
+                }
+
+                if (files.length > 0) payload._files = files;
+            } else {
+                payload = request.body?.payload || {};
+                corrId = request.body?.correlationId || corrId;
+            }
+
+            const result = await execute(code, payload, corrId);
             const statusCode = result.success ? 200 : 502;
+
             return reply.code(statusCode).send({
                 success: result.success,
                 data: result.data,

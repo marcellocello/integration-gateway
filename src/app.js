@@ -23,6 +23,12 @@ function buildApp(opts = {}) {
     });
 
     app.register(require('./plugins/mysql'));
+    app.register(require('@fastify/multipart'), {
+        limits: {
+            fileSize: 2 * 1024 * 1024,
+            files: 1
+        }
+    })
 
     app.addHook('preHandler', async (request, reply) => {
         const publicPaths = ['/health', '/', '/favicon.ico'];

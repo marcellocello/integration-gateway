@@ -11,27 +11,33 @@ class RestApiAdapter extends BaseAdapter {
     }
 
     async execute(payload) {
-        const { base_url, method, path, headers, body_template, query_template, timeout_ms } = this.config;
+        const { base_url, method, path, headers, body_template, query_template, timeout_ms, force_body } = this.config;
 
-        const resolvedPath = this.resolveTemplate(path, payload);
-        const resolvedHeaders = this.resolveTemplate(headers || {}, payload);
-        const resolvedBody = body_template ? this.resolveTemplate(body_template, payload) : payload.body || null;
+        const { _files: files = [], ...cleanPayload } = payload;
+
+        const resolvedPath = this.resolveTemplate(path, cleanPayload);
+        const resolvedHeaders = this.resolveTemplate(headers || {}, cleanPayload);
+        const resolvedBody = body_template
+            ? this.resolveTemplate(body_template, cleanPayload)
+            : cleanPayload.body || null;
 
         let url = `${base_url.replace(/\/+$/, '')}${resolvedPath}`;
         if (query_template) {
-            const queryParams = this.resolveTemplate(query_template, payload);
+            const queryParams = this.resolveTemplate(query_template, cleanPayload);
             const qs = new URLSearchParams(queryParams).toString();
             if (qs) url += `?${qs}`;
         }
 
-        const finalHeaders = this.buildAuthHeaders(resolvedHeaders, payload);
-
+        const finalHeaders = this.buildAuthHeaders(resolvedHeaders, cleanPayload);
         const result = await httpRequest({
             url,
             method: method.toUpperCase(),
             headers: finalHeaders,
             body: resolvedBody,
             timeout: timeout_ms || 30000,
+            forceBody: force_body === true,
+            files,
+            formFields: resolvedBody || {},
         });
 
         return {
