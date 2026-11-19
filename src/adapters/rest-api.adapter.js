@@ -11,7 +11,7 @@ class RestApiAdapter extends BaseAdapter {
     }
 
     async execute(payload) {
-        const { base_url, method, path, headers, body_template, query_template, timeout_ms, force_body } = this.config;
+        const { base_url, method, path, headers, body_template, query_template, timeout_ms, force_body, insecure } = this.config;
 
         const { _files: files = [], ...cleanPayload } = payload;
 
@@ -36,6 +36,7 @@ class RestApiAdapter extends BaseAdapter {
             body: resolvedBody,
             timeout: timeout_ms || 30000,
             forceBody: force_body === true,
+            insecure: insecure === true,
             files,
             formFields: resolvedBody || {},
         });

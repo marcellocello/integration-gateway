@@ -90,7 +90,12 @@ async function execute(code, payload, correlationId = null) {
         } else {
             logStatus = 'FAILED';
             errorMessage = result.error?.message || `HTTP ${result.statusCode}`;
-            if (cbConfig.enabled) recordFailure(code);
+            const isServerError = result.statusCode && result.statusCode >= 500;
+            const isNetworkError = !result.statusCode;
+
+            if (cbConfig.enabled && (isServerError || isNetworkError)) {
+                recordFailure(code);
+            }
         }
     } catch (err) {
         logStatus = err.code === 'UND_ERR_HEADERS_TIMEOUT' ? 'TIMEOUT' : 'FAILED';
