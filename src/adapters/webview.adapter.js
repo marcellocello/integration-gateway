@@ -13,20 +13,18 @@ class WebviewAdapter extends BaseAdapter {
 
         let url;
 
+        const resolvedBaseUrl = this.resolveTemplate(base_url, payload);
         if (url_template) {
-            const templateData = { base_url, ...payload };
-
+            const templateData = { base_url: resolvedBaseUrl, ...payload };
             if (token_generation) {
                 templateData.generated_token = this.generateToken(payload);
             }
-
             url = this.resolveTemplate(url_template, templateData);
         } else {
             const queryParams = { ...params };
             Object.assign(queryParams, this.resolveTemplate(params || {}, payload));
-
             const qs = new URLSearchParams(queryParams).toString();
-            url = qs ? `${base_url}?${qs}` : base_url;
+            url = qs ? `${resolvedBaseUrl}?${qs}` : resolvedBaseUrl;
         }
 
         return {
