@@ -15,13 +15,17 @@ class RestApiAdapter extends BaseAdapter {
 
         const { _files: files = [], ...cleanPayload } = payload;
 
+        const resolvedBaseUrl = this.resolveTemplate(base_url, cleanPayload)
         const resolvedPath = this.resolveTemplate(path, cleanPayload);
         const resolvedHeaders = this.resolveTemplate(headers || {}, cleanPayload);
         const resolvedBody = body_template
             ? this.resolveTemplate(body_template, cleanPayload)
             : cleanPayload.body || null;
 
-        let url = `${base_url.replace(/\/+$/, '')}${resolvedPath}`;
+        if (resolvedBaseUrl.includes('{{') && resolvedBaseUrl.includes('}}')) {
+            throw new Error(`Parameter ${resolvedBaseUrl} untuk base_url belum diisi di payload`);
+        }
+        let url = `${resolvedBaseUrl.replace(/\/+$/, '')}${resolvedPath}`;
         if (query_template) {
             const queryParams = this.resolveTemplate(query_template, cleanPayload);
             const qs = new URLSearchParams(queryParams).toString();
